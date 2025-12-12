@@ -1,169 +1,290 @@
 import { useState } from 'react';
 
-// Common keywords to look for to enhance matching logic
+// Enhanced resume analysis hook
+// Features:
+// - Robust PDF text extraction using pdfjs (dynamic import, client-side)
+// - Fuzzy keyword matching (Levenshtein distance) and synonym expansion
+// - Section detection (Experience, Education, Skills, Projects)
+// - Scoring breakdown: Keyword coverage, Section presence, Readability/length, ATS friendliness
+// - Human-friendly analysis text + actionable improvement suggestions
+
 const COMMON_TECH_STACK = [
-    'React', 'Angular', 'Vue', 'Node.js', 'Python', 'Java', 'C++', 'AWS', 'Azure',
-    'Docker', 'Kubernetes', 'SQL', 'NoSQL', 'TypeScript', 'JavaScript', 'HTML', 'CSS',
-    'Git', 'CI/CD', 'Agile', 'Scrum', 'Leadership', 'Communication', 'Problem Solving',
-    'Machine Learning', 'AI', 'Data Analysis', 'Project Management', 'Rest API', 'GraphQL',
-    'Tailwind', 'Sass', 'Redux', 'Context API', 'MongoDB', 'PostgreSQL', 'Firebase', 'Next.js'
+  'React', 'Angular', 'Vue', 'Node.js', 'Node', 'Python', 'Java', 'C++', 'C#', 'AWS', 'Azure',
+  'Docker', 'Kubernetes', 'SQL', 'NoSQL', 'TypeScript', 'JavaScript', 'HTML', 'CSS', 'Git', 'CI/CD',
+  'Agile', 'Scrum', 'Leadership', 'Communication', 'Problem Solving', 'Machine Learning', 'AI',
+  'Data Analysis', 'Project Management', 'REST', 'REST API', 'GraphQL', 'Tailwind', 'Sass', 'Redux',
+  'Context API', 'MongoDB', 'PostgreSQL', 'Firebase', 'Next.js', 'Express', 'Spring', 'Hibernate'
 ];
 
-const useResumeAnalysis = () => {
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [results, setResults] = useState(null);
-    const [error, setError] = useState(null);
-
-    // Helper to read file content as text
-    const readFileAsText = (file) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error("Failed to read file"));
-            reader.readAsText(file);
-        });
-    };
-
-    // Helper to extract relevant keywords from Job Description
-    const extractKeywords = (text) => {
-        if (!text) return [];
-
-        // 1. Find words from our known tech stack list
-        const techMatches = COMMON_TECH_STACK.filter(tech =>
-            text.toLowerCase().includes(tech.toLowerCase())
-        );
-
-        // 2. Find other potential capitalized keywords (simple heuristic for proper nouns)
-        // This regex looks for words starting with capital letters, excluding common stop words
-        // We match words with at least 3 letters to avoid noise
-        const potentialKeywords = text.match(/\b[A-Z][a-zA-Z]{2,}\b/g) || [];
-
-        // Combine and dedup
-        const uniqueKeywords = [...new Set([...techMatches, ...potentialKeywords])];
-
-        return uniqueKeywords;
-    };
-
-    const analyzeResume = async (file, jobDescription) => {
-        setIsAnalyzing(true);
-        setError(null);
-        setResults(null);
-
-        try {
-            if (!file || !jobDescription) {
-                throw new Error("Please provide both a resume and a job description.");
-            }
-
-            // Simulate partial network delay for realism/loading state
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // 1. Read files
-            // Note: FileReader works well for .txt, .md. 
-            // For .pdf, reading as text yields limited results but often contains raw keyword strings if uncompressed.
-            // A full production app would use a server-side parser or pdf.js.
-            let resumeText = "";
-            try {
-                resumeText = await readFileAsText(file);
-            } catch (e) {
-                console.warn("Could not read file text directly", e);
-                resumeText = "";
-            }
-
-            // 2. Core Analysis Logic
-            const jdKeywords = extractKeywords(jobDescription);
-            const totalKeywords = jdKeywords.length || 1;
-
-            // Check how many JD keywords exist in the Resume
-            const matchedKeywords = jdKeywords.filter(keyword =>
-                resumeText.toLowerCase().includes(keyword.toLowerCase())
-            );
-
-            const missingKeywords = jdKeywords.filter(keyword =>
-                !resumeText.toLowerCase().includes(keyword.toLowerCase())
-            );
-
-            // 3. Calculate Score
-            // Base score algorithm:
-            // 40 points base for submitting
-            // + up to 60 points based on keyword coverage
-            const matchRatio = matchedKeywords.length / totalKeywords;
-            let calculatedScore = Math.floor(40 + (matchRatio * 60));
-
-            // Random jitter (+/- 5) to make it feel less robotic on re-runs of same text
-            calculatedScore += Math.floor(Math.random() * 10) - 5;
-
-            // Cap score
-            calculatedScore = Math.min(Math.max(calculatedScore, 0), 100);
-
-            // Handle edge case where file is unreadable (often happens with binary PDFs in FileReader)
-            // If we found NO matches but JD had keywords, it's suspicious.
-            if (matchedKeywords.length === 0 && totalKeywords > 0) {
-                // Check if it's a binary file issue
-                if (file.type === "application/pdf") {
-                    // Fallback logic: "We detected a PDF but couldn't parse text in-browser perfectly."
-                    // For this demo, we'll suggest using .txt or assume a baseline score.
-                    calculatedScore = 50;
-                }
-            }
-
-            // 4. Determine Match Level
-            let matchLevel = 'Low';
-            if (calculatedScore >= 80) matchLevel = 'High';
-            else if (calculatedScore >= 60) matchLevel = 'Medium';
-
-            // 5. Generate Dynamic Improvements
-            const improvements = [];
-
-            if (missingKeywords.length > 0) {
-                // Determine context-aware missing fields
-                const techMissing = missingKeywords.filter(k => COMMON_TECH_STACK.includes(k));
-                const generalMissing = missingKeywords.filter(k => !COMMON_TECH_STACK.includes(k));
-
-                if (techMissing.length > 0) {
-                    improvements.push(`Missing Critical Skills: ${techMissing.slice(0, 5).join(", ")}. Add these if you possess them.`);
-                }
-
-                if (generalMissing.length > 0) {
-                    improvements.push(`Consider adding these keywords from the description: ${generalMissing.slice(0, 3).join(", ")}.`);
-                }
-            } else {
-                improvements.push("Excellent keyword coverage! Your resume reflects the job description well.");
-            }
-
-            if (resumeText.length < 200 && file.type === 'text/plain') {
-                improvements.push("Your resume seems very short. Ensure you elaborate on your experience.");
-            }
-
-            // 6. ATS Tips (Static + Dynamic)
-            const atsTips = [
-                "Use standard headings (Experience, Education, Skills).",
-                "Avoid using tables or columns which can confuse some ATS parsers.",
-                missingKeywords.length > 0 ? `Incorporate exact keywords: "${missingKeywords[0]}" matches the JD exactly.` : "Keep your keyword density natural.",
-                "Ensure the file is text-selectable (not an image scan)."
-            ];
-
-            const analysisResults = {
-                score: calculatedScore,
-                matchLevel,
-                improvements,
-                atsTips
-            };
-
-            setResults(analysisResults);
-
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setIsAnalyzing(false);
-        }
-    };
-
-    return {
-        analyzeResume,
-        isAnalyzing,
-        results,
-        error
-    };
+// Small synonyms/aliases expansion to increase matching recall
+const SYNONYMS = {
+  'rest api': ['rest', 'restful', 'rest-api'],
+  'node.js': ['node', 'nodejs'],
+  'javascript': ['js'],
+  'c++': ['cpp'],
+  'aws': ['amazon web services'],
+  'sql': ['structured query language']
 };
 
-export default useResumeAnalysis;
+// Utility: normalize text
+const normalize = (s = '') => s.replace(/[\u2018\u2019\u201C\u201D]/g, '"').replace(/[\n\r\t]+/g, ' ').replace(/[^\w\s\/.+-]/g, ' ').toLowerCase();
+
+// Utility: simple Levenshtein distance for fuzzy matching
+const levenshtein = (a = '', b = '') => {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+};
+
+const fuzzyIncludes = (text, keyword, fuzzThreshold = 0.25) => {
+  // Exact or substring match
+  if (text.includes(keyword)) return true;
+  // Fuzzy: compute levenshtein normalized by keyword length
+  const windowSize = Math.max(keyword.length + 6, keyword.length * 2);
+  for (let i = 0; i < Math.max(1, text.length - keyword.length + 1); i++) {
+    const slice = text.slice(i, i + keyword.length + 6);
+    const dist = levenshtein(slice.slice(0, keyword.length + 2), keyword.slice(0, Math.min(keyword.length + 2, slice.length)));
+    if (dist / Math.max(keyword.length, 1) <= fuzzThreshold) return true;
+  }
+  return false;
+};
+
+// Try reading file as text including PDF via pdfjs
+const readFile = async (file) => {
+  const reader = new FileReader();
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+  if (!isPdf) {
+    return await new Promise((res, rej) => {
+      reader.onload = () => res(String(reader.result || ''));
+      reader.onerror = () => rej(new Error('Failed to read file as text'));
+      reader.readAsText(file);
+    });
+  }
+
+  // PDF path: attempt to use pdfjs-dist in-browser
+  try {
+    // dynamic import to avoid bundling requirement; caller environment (CRA/Vite) must support dynamic imports
+    const pdfjsLib = await import('pdfjs-dist/build/pdf');
+    // worker path hint — some bundlers need manual worker setup; we try a fallback if available
+    try {
+      // eslint-disable-next-line no-undef
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsLib.PDFWorker ? pdfjsLib.PDFWorker : '/pdf.worker.js';
+    } catch (e) {
+      // ignore worker setup errors — some environments handle it automatically
+    }
+
+    const arrayBuffer = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(new Error('Failed to read PDF file')); 
+      r.readAsArrayBuffer(file);
+    });
+
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(i => i.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    return fullText;
+  } catch (err) {
+    // PDF library isn't available or failed — fallback to binary-to-text attempt
+    console.warn('PDF parsing failed in browser, falling back to text read:', err);
+    return await new Promise((resolve) => {
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve('');
+      reader.readAsText(file);
+    });
+  }
+};
+
+const expandKeywords = (keywords) => {
+  const expanded = new Set();
+  keywords.forEach(k => {
+    const kLower = k.toLowerCase();
+    expanded.add(kLower);
+    if (SYNONYMS[kLower]) {
+      SYNONYMS[kLower].forEach(s => expanded.add(s));
+    }
+  });
+  return Array.from(expanded);
+};
+
+const extractKeywordsFromJD = (text) => {
+  if (!text) return [];
+  // Heuristic: find tech stack tokens + capitalized multiword phrases
+  const normalized = normalize(text);
+  const tokens = new Set();
+
+  // From known stack
+  COMMON_TECH_STACK.forEach(t => {
+    if (normalized.includes(t.toLowerCase())) tokens.add(t);
+  });
+
+  // From phrases: pick common multi-word patterns (e.g., "machine learning", "rest api")
+  const phraseMatches = normalized.match(/\b[a-z]{2,}(?:\s+[a-z]{2,}){0,3}\b/g) || [];
+  phraseMatches.forEach(p => {
+    if (p.length > 2 && p.split(' ').length <= 4) tokens.add(p);
+  });
+
+  return Array.from(tokens).slice(0, 80); // limit
+};
+
+const detectSections = (text) => {
+  const headings = ['experience', 'work experience', 'professional experience', 'education', 'skills', 'projects', 'certifications', 'summary', 'objective'];
+  const sections = {};
+  const lower = text.toLowerCase();
+  headings.forEach(h => {
+    const idx = lower.indexOf(h);
+    if (idx !== -1) sections[h] = true;
+  });
+  return sections;
+};
+
+const computeReadabilityScore = (text) => {
+  // Very simple heuristic: length + average sentence length
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const sentences = text.split(/[\.\!\?]+/).filter(Boolean).length || 1;
+  const avgSentence = words / sentences;
+  // score 0-100: prefer 300-1000 words and avgSentence between 8-18
+  const lengthScore = Math.max(0, Math.min(100, ((Math.min(words, 1000) / 1000) * 100)));
+  const sentenceScore = Math.max(0, Math.min(100, (1 - Math.abs(avgSentence - 12) / 20) * 100));
+  return Math.round((lengthScore * 0.6) + (sentenceScore * 0.4));
+};
+
+const useEnhancedResumeAnalysis = () => {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState(null);
+
+  const analyzeResume = async (file, jobDescriptionText) => {
+    setIsAnalyzing(true);
+    setError(null);
+    setResults(null);
+
+    try {
+      if (!file || !jobDescriptionText) throw new Error('Please provide both a resume file and a job description.');
+
+      const rawResumeText = String(await readFile(file) || '');
+      const resumeText = normalize(rawResumeText);
+      const jdText = normalize(jobDescriptionText);
+
+      // Extract keywords from JD + expand synonyms
+      const jdKeywords = extractKeywordsFromJD(jobDescriptionText);
+      const jdKeywordsExpanded = expandKeywords(jdKeywords.map(k => k.toLowerCase()));
+
+      // Match keywords with fuzzy logic
+      const matched = [];
+      const missing = [];
+      jdKeywordsExpanded.forEach(k => {
+        // direct substring or fuzzy
+        const found = resumeText.includes(k) || fuzzyIncludes(resumeText, k, 0.22);
+        if (found) matched.push(k);
+        else missing.push(k);
+      });
+
+      // Also try to match known stack more generously
+      const stackMatches = COMMON_TECH_STACK.filter(t => resumeText.includes(t.toLowerCase()) || fuzzyIncludes(resumeText, t.toLowerCase(), 0.18));
+
+      // Section detection
+      const sections = detectSections(rawResumeText);
+      const sectionBonus = Math.min(20, Object.keys(sections).length * 5); // up to +20
+
+      // Readability / length score
+      const readability = computeReadabilityScore(rawResumeText);
+
+      // Keyword coverage score (0-60)
+      const coverageRatio = jdKeywordsExpanded.length ? (matched.length / jdKeywordsExpanded.length) : 1;
+      const keywordScore = Math.round(Math.min(60, coverageRatio * 60));
+
+      // Stack score (0-10)
+      const stackScore = Math.round(Math.min(10, stackMatches.length / Math.max(1, COMMON_TECH_STACK.length) * 10));
+
+      // ATS friendliness heuristics (0-10)
+      let atsScore = 10;
+      if (rawResumeText.length < 300) atsScore -= 5; // too short
+      if (/\btable\b|<table>/i.test(rawResumeText)) atsScore -= 3; // likely tables
+      if (!/experience|education|skills/i.test(rawResumeText)) atsScore -= 3; // missing headings
+      atsScore = Math.max(0, Math.min(10, atsScore));
+
+      // Compose final score (0-100)
+      let finalScore = Math.round(keywordScore + sectionBonus + (readability * 0.1) + stackScore + atsScore);
+      finalScore = Math.max(0, Math.min(100, finalScore));
+
+      // Determine match level
+      let matchLevel = 'Low';
+      if (finalScore >= 80) matchLevel = 'High';
+      else if (finalScore >= 60) matchLevel = 'Medium';
+
+      // Build human-friendly feedback
+      const topMatched = Array.from(new Set([...matched, ...stackMatches])).slice(0, 15);
+      const topMissing = missing.slice(0, 12);
+
+      const suggestions = [];
+      if (topMissing.length > 0) {
+        suggestions.push(`Keywords to add (if you have experience): ${topMissing.join(', ')}.`);
+      } else {
+        suggestions.push('Great — you include most of the JD keywords. Keep them naturally integrated.');
+      }
+
+      if (!sections['experience'] && !sections['work experience'] && !sections['professional experience']) {
+        suggestions.push('Add a clear "Experience" or "Work Experience" section with bullet points listing achievements and metrics.');
+      }
+
+      if (rawResumeText.length < 400) suggestions.push('Your resume is short — expand on projects, responsibilities and measurable outcomes. Aim for 600–900 words for mid-senior roles.');
+
+      if (/picture|photo/.test(rawResumeText.toLowerCase())) {
+        suggestions.push('Remove profile photos to improve ATS parsing (unless specifically requested).');
+      }
+
+      suggestions.push('Use exact job-title phrasing from the JD once if it matches your role (e.g., "Frontend Engineer" vs "Front-end Developer").');
+      suggestions.push('Prefer bullet points with metrics (e.g., "Improved X by 30%"), and avoid dense paragraphs.');
+
+      const analysisText = `Your resume scored ${finalScore}/100 (${matchLevel}).\n` +
+        `Keyword coverage: ${Math.round(coverageRatio * 100)}%. Found ${matched.length} of ${jdKeywordsExpanded.length} JD keywords.\n` +
+        `Detected sections: ${Object.keys(sections).length ? Object.keys(sections).join(', ') : 'None obvious'}.\n` +
+        `Readability score: ${readability}/100.\n\nSuggestions:\n- ${suggestions.join('\n- ')}`;
+
+      const output = {
+        score: finalScore,
+        matchLevel,
+        breakdown: {
+          keywordScore,
+          sectionBonus,
+          readability,
+          stackScore,
+          atsScore
+        },
+        matched: Array.from(new Set(topMatched)),
+        missing: topMissing,
+        suggestions,
+        analysisText,
+        parsedText: rawResumeText.slice(0, 12000), // return a preview (limit size)
+        sections
+      };
+
+      setResults(output);
+
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Analysis failed');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  return { analyzeResume, isAnalyzing, results, error };
+};
+
+export default useEnhancedResumeAnalysis;
