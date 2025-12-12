@@ -1,7 +1,6 @@
 # 🚀 ResumeAI - AI-Powered Resume Analyzer
 
 ![ResumeAI Hero](https://images.unsplash.com/photo-1586281380349-632531db7ed4?q=80&w=2070&auto=format&fit=crop) 
-*(Note: You can replace this image with a screenshot of your actual app)*
 
 ResumeAI is a modern, fast, and intelligent web application designed to help job seekers optimize their resumes for Applicant Tracking Systems (ATS). By analyzing the resume against a specific job description, it provides a compatibility score, detailed improvement suggestions, and keyword optimization tips to significantly increase interview chances.
 
